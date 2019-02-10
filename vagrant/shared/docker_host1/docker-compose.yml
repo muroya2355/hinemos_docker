@@ -1,0 +1,26 @@
+version: '2'
+
+services:
+
+  data00redis:
+    image: busybox:1.30.0
+    labels:
+      - "hinemosAssignScopeId=web1"
+    volumes:
+      - /data/redis:/data
+  redis:
+    image: redis:5.0.3-alpine
+    labels:
+      - "hinemosAssignScopeId=web2"
+    volumes_from:
+      - data00redis
+    command: redis-server --appendonly yes
+  ethercalc:
+    image: audreyt/ethercalc
+    labels:
+      - "hinemosAssignScopeId=web3"
+    ports:
+      - "8000:8000"
+    links:
+      - redis:redis
+    command: ["sh", "-c", "REDIS_HOST=$$REDIS_PORT_6379_TCP_ADDR REDIS_PORT=$$REDIS_PORT_6379_TCP_PORT pm2 start -x `which ethercalc` -- --cors && pm2 logs"]

@@ -1,0 +1,28 @@
+version: '2'
+
+services:
+
+  data00mongo:
+    image: busybox:1.30.0
+    labels:
+      - "hinemosAssignScopeId=web4"
+    volumes:
+      - /data/mongo:/data/db
+  mongo:
+    image: mongo:3.1.5
+    labels:
+      - "hinemosAssignScopeId=web5"
+    volumes_from:
+      - data00mongo
+    command: mongod --smallfiles
+  libreboard:
+    image: miurahr/libreboard:20150503
+    labels:
+      - "hinemosAssignScopeId=web6"
+    environment:
+      MONGO_URL: mongodb://mongo:27017/libreboard
+      ROOT_URL: http://example.com
+    links:
+      - mongo:mongo
+    ports:
+      - "5555:5555"

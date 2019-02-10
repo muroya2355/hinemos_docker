@@ -1,0 +1,229 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+
+  config.ssh.insert_key = false
+
+# Hinemos Managerサーバ
+  # OS設定
+  config.vm.define "manager_server" do |manager_server|
+    manager_server.vm.box = config.vm.box = "centos/7"
+    manager_server.vm.network "private_network", ip: "192.168.50.101"
+    manager_server.vm.provision :hosts, :sync_hosts => true
+    manager_server.vm.synced_folder "./shared/manager_server", "/home/vagrant/shared", owner: "vagrant", group: "vagrant"
+
+    # 仮想マシンの設定
+    manager_server.vm.provider "vb" do |vb|
+      vb.memory = 1024
+      vb.cpus = 2
+      vb.name = "manager_server"
+    end
+
+    # プロビジョニング
+    manager_server.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # firewalld, SElinux の無効化
+      sudo systemctl stop firewalld
+      sudo systemctl disable firewalld
+      sudo sed -i -e 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+    SHELL
+    
+    # 仮想マシンの再起動
+    manager_server.vm.provision :reload
+
+    manager_server.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # Hinemos 必須パッケージのインストール
+      sudo yum install -y java-1.8.0-openjdk rsyslog unzip vim-common wget
+      sudo yum install -y net-snmp net-snmp-utils
+      sudo yum clean all
+
+      # Hinemos マネージャーのインストール
+      sudo rpm -ivh https://github.com/hinemos/hinemos/releases/download/v6.1.2/hinemos-6.1-manager-6.1.2-1.el7.x86_64.rpm
+      sudo systemctl start hinemos_manager
+      sudo systemctl enable hinemos_manager
+      
+      # Hinemos エージェントのインストール
+      sudo HINEMOS_MANAGER=127.0.0.1 rpm -ivh https://github.com/hinemos/hinemos/releases/download/v6.1.2/hinemos-6.1-agent-6.1.2-1.el.noarch.rpm
+      sudo systemctl start hinemos_agent
+      sudo systemctl enable hinemos_agent
+
+      # サンプルスクリプト実行用パッケージのインストール
+      sudo yum install -y python net-snmp-python
+      sudo yum install -y python python-setuptools
+      sudo easy_install pip
+      sudo pip install docker-py
+      sudo pip install suds
+      sudo pip install python-dateutil
+
+      # サンプルスクリプトのインストール
+      cp ~/shared/hinemos_docker_sample_v1.0.0.tar.gz ~/
+      tar zxvf hinemos_docker_sample_v1.0.0.tar.gz
+      cd ./hinemos_docker_sample_v1.0.0
+      sudo ./install.sh
+    SHELL
+
+  end
+
+# Dockerホスト1の作成
+  # OS設定
+  config.vm.define "docker_host1" do |docker_host1|
+    docker_host1.vm.box = config.vm.box = "centos/7"
+    docker_host1.vm.network "private_network", ip: "192.168.50.102"
+    docker_host1.vm.provision :hosts, :sync_hosts => true
+    docker_host1.vm.synced_folder "./shared/docker_host1", "/home/vagrant/shared", owner: "vagrant", group: "vagrant"
+
+    # 仮想マシンの設定
+    docker_host1.vm.provider "vb" do |vb|
+      vb.memory = 1024
+      vb.cpus = 2
+      vb.name = "docker_host1"
+    end
+
+    # プロビジョニング
+    docker_host1.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # firewalld, SElinux の無効化
+      sudo systemctl stop firewalld
+      sudo systemctl disable firewalld
+      sudo sed -i -e 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+    SHELL
+
+    # 仮想マシンの再起動
+    docker_host1.vm.provision :reload
+
+    docker_host1.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # 必須パッケージのインストール
+      sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+      sudo yum install -y net-snmp net-snmp-utils
+      sudo yum makecache fast
+
+      # Docker のインストール
+      sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+      sudo yum makecache fast
+      sudo yum install -y docker-ce
+      sudo usermod -aG docker $USER
+      sudo systemctl enable docker
+
+      # Docker Compose のインストール
+      sudo curl -L https://github.com/docker/compose/releases/download/1.24.0-rc1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+      sudo chmod +x /usr/local/bin/docker-compose
+
+      # Docker Remote API の有効化
+      sudo cp /vagrant/shared/docker_conf/docker-tcp.socket /usr/lib/systemd/system/docker-tcp.socket
+      sudo systemctl enable docker-tcp.socket
+      sudo systemctl start docker-tcp.socket
+      sudo sed -i -e 's/fd:\/\//fd:\/\/ -H tcp:\/\/0.0.0.0:2375/g' /lib/systemd/system/docker.service
+      sudo systemctl daemon-reload
+      sudo systemctl start docker
+      sudo docker -H tcp://127.0.0.1:2375 ps
+
+
+      # snmp 設定
+      sudo sed -i -e '$aview    systemview      included   .1.3.6.1.2.1' /etc/snmp/snmpd.conf
+      sudo systemctl start snmpd
+      sudo systemctl enable snmpd
+    SHELL
+
+     # 仮想マシンの再起動
+     docker_host1.vm.provision :reload
+  end
+
+
+# Dockerホスト2の作成
+  # OS設定
+  config.vm.define "docker_host2" do |docker_host2|
+    docker_host2.vm.box = config.vm.box = "centos/7"
+    docker_host2.vm.network "private_network", ip: "192.168.50.103"
+    docker_host2.vm.provision :hosts, :sync_hosts => true
+    docker_host2.vm.synced_folder "./shared/docker_host2", "/home/vagrant/shared", owner: "vagrant", group: "vagrant"
+
+    # 仮想マシンの設定
+    docker_host2.vm.provider "vb" do |vb|
+      vb.memory = 512
+      vb.cpus = 1
+      vb.name = "docker_host2"
+    end
+
+    # プロビジョニング
+    docker_host2.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # firewalld, SElinux の無効化
+      sudo systemctl stop firewalld
+      sudo systemctl disable firewalld
+      sudo sed -i -e 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+    SHELL
+
+    # 仮想マシンの再起動
+    docker_host2.vm.provision :reload
+
+    docker_host2.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # 必須パッケージのインストール
+      sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+      sudo yum install -y net-snmp net-snmp-utils
+      sudo yum makecache fast
+
+      # Docker のインストール
+      sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+      sudo yum makecache fast
+      sudo yum install -y docker-ce
+      sudo usermod -aG docker $USER
+      sudo cp /vagrant/docker_conf/docker-tcp.socket /usr/lib/systemd/system/docker-tcp.socket
+      sudo systemctl enable docker
+
+      # Docker Compose のインストール
+      sudo curl -L https://github.com/docker/compose/releases/download/1.24.0-rc1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+      sudo chmod +x /usr/local/bin/docker-compose
+
+      # Docker Remote API の有効化
+      sudo cp /vagrant/shared/docker_conf/docker-tcp.socket /usr/lib/systemd/system/docker-tcp.socket
+      sudo systemctl enable docker-tcp.socket
+      sudo systemctl start docker-tcp.socket
+      sudo sed -i -e 's/fd:\/\//fd:\/\/ -H tcp:\/\/0.0.0.0:2375/g' /lib/systemd/system/docker.service
+      sudo systemctl daemon-reload
+      sudo systemctl start docker
+      sudo docker -H tcp://127.0.0.1:2375 ps
+
+      # snmp 設定
+      sudo sed -i -e '$aview    systemview      included   .1.3.6.1.2.1' /etc/snmp/snmpd.conf
+      sudo systemctl start snmpd
+      sudo systemctl enable snmpd
+
+    SHELL
+
+     # 仮想マシンの再起動
+     docker_host2.vm.provision :reload
+  end
+
+
+# Hinemos Webクライアントサーバの作成
+  # OS設定
+  config.vm.define "client_server" do |client_server|
+    client_server.vm.box = config.vm.box = "centos/7"
+    client_server.vm.network "private_network", ip: "192.168.50.104"
+    client_server.vm.provision :hosts, :sync_hosts => true
+
+    # プロビジョニング
+    client_server.vm.provision "shell", privileged: false, inline: <<-SHELL
+      # firewalld, SElinux の無効化
+      sudo systemctl stop firewalld
+      sudo systemctl disable firewalld
+      sudo sed -i -e 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+    SHELL
+
+    # 仮想マシンの再起動
+    client_server.vm.provision :reload
+
+    client_server.vm.provision "shell", privileged: false, inline: <<-SHELL
+
+      # 必須パッケージのインストール
+      sudo yum -y install unzip
+      sudo yum install -y java-1.8.0-openjdk vlgothic-p-fonts
+
+      # Hinemos web クライアントのインストール
+      sudo rpm -ivh https://github.com/hinemos/hinemos/releases/download/v6.1.2/hinemos-6.1-web-6.1.2-1.el7.x86_64.rpm
+      sudo sed -i -e 's/en_US/ja_JP/g'
+      sudo systemctl start hinemos_web
+      sudo systemctl enable hinemos_web
+    SHELL
+
+  end
+
+end
