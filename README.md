@@ -20,7 +20,7 @@
 	```
 	$ vagrant plugin install vagrant-hosts
 	$ vagrant plugin install vagrant-reload
-	$ vagrant plugin install vagrant-reload
+	$ vagrant plugin install vagrant-vbguest
 	```
 
 ### リポジトリをクローン
@@ -64,7 +64,7 @@
 ### マネージャーサーバーを Hinemos に登録
 * ブラウザから Hinemos Web クライアントにアクセス
 	
-	http://192.168.50.102/
+	http://192.168.50.104/
 
 * 
 

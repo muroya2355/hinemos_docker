@@ -219,7 +219,7 @@ Vagrant.configure("2") do |config|
 
       # Hinemos web クライアントのインストール
       sudo rpm -ivh https://github.com/hinemos/hinemos/releases/download/v6.1.2/hinemos-6.1-web-6.1.2-1.el7.x86_64.rpm
-      sudo sed -i -e 's/en_US/ja_JP/g'
+      sudo sed -i -e 's/en_US/ja_JP/g' /opt/hinemos_web/conf/hinemos_web.cfg
       sudo systemctl start hinemos_web
       sudo systemctl enable hinemos_web
     SHELL
